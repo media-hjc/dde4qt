@@ -1,14 +1,13 @@
 #include "MainWindow.h"
 #include "ui_MainWindow.h"
 
-MainWindow::MainWindow(QWidget *parent) :
-    QMainWindow(parent),
-    urlProtocolHandler("dde4qt"),
-    ui(new Ui::MainWindow)
+MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent),
+    ui(new Ui::MainWindow),
+    urlProtocolHandler("dde4qt")
 {
-    connect(&urlProtocolHandler, &win32::QUrlProtocolHandler::activate, this, &MainWindow::onProtocolActivate);
     urlProtocolHandler.install();
     ui->setupUi(this);
+    connect(&urlProtocolHandler, &win32::QUrlProtocolHandler::activate, this, &MainWindow::onProtocolActivate);
 }
 
 MainWindow::~MainWindow()

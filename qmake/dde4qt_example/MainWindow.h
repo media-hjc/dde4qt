@@ -4,8 +4,9 @@
 #include <QMainWindow>
 #include "../../src/QDynamicDataExchange.h"
 
-namespace Ui {
-class MainWindow;
+namespace Ui
+{
+    class MainWindow;
 }
 
 class MainWindow : public QMainWindow
@@ -15,7 +16,7 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(QWidget *parent = 0);
     ~MainWindow();
-    
+
 private Q_SLOTS:
     void onProtocolActivate(const QUrl& url);
 private:

@@ -16,7 +16,7 @@
 namespace win32 {
 
     /**
-    ** @brief The Atom class WIN32系统全局原子表操作类
+    ** @brief The Atom class WIN32系统全局原子表操作类 将传入的参数放入原子表中
     **        系统提供许多原子表.每个原子表用于不同的目的;
     **        例如,动态数据交换(DDE)应用程序使用全局原子表(global atom table)
     **        与其他应用程序共享项目名称和主题名称字符串.不用传递实际的字符串,
@@ -36,7 +36,8 @@ namespace win32 {
         ATOM atom;
     };
     /**
-    * @brief The QDdeFilter class
+    * @brief The QDdeFilter class DDE事件处理类,连接 注销 信息收发 将程序名和主题放入原子表中
+    *        目前只能处理连接 注销 命令执行。  信息传递功能有待开发
     */
     class QDdeFilter : public QObject, public QAbstractNativeEventFilter
     {
@@ -47,6 +48,7 @@ namespace win32 {
             void command(const QString& command);
 
         public:
+            //构造函数
             QDdeFilter(const QString& application, const QString& topic, QObject* parent=nullptr)
               : QObject(parent),application(application), topic(topic)
             {
@@ -58,7 +60,7 @@ namespace win32 {
             bool nativeEventFilter(const QByteArray& /*eventType*/, void* message, long* /*result*/) override
             {
                 auto msg = reinterpret_cast<LPMSG>(message);
-                if (msg->message == WM_DDE_INITIATE)  //收到此消息将回复一个WM_DDE_ACK类型消息以启动与服客户端程序的对话
+                if (msg->message == WM_DDE_INITIATE)  //收到此消息将回复一个WM_DDE_ACK类型消息以启动与客户端程序的对话
                 {
                     if (LOWORD(msg->lParam) == application && HIWORD(msg->lParam) == topic)
                     {
@@ -88,72 +90,77 @@ namespace win32 {
             }
 
         Atom application;
-        Atom topic;    //将application  topic两个值放和原子表中
+        Atom topic;    //实例化application  topic两个对象
     };
     /**
-     * @brief The QUrlProtocolHandler class
+     * @brief The QUrlProtocolHandler class  路径协议处理程序类
      */
     class QUrlProtocolHandler : public QObject
     {
         Q_OBJECT
-        Q_SIGNALS:
-        void activate(const QUrl& url);
+        Q_SIGNALS:  //发射信号函数
+            void activate(const QUrl& url);
 
-    public:
-        //警告提示warning: ‘xxx’ will be initialized after 'xxx'
-        //其实是由于我们在初始化成员变量的时候没有按照成员声明的顺序初始化造成的，
-        //所以以后在使用Qt进行开发应用程序时，应该按照头文件中成员变量声明的顺序
-        //进行初始化就不会出现上述的警告了  无视该警告 程序仍然可以正常编译
-        QUrlProtocolHandler(const QString& schema, const QString& application = QCoreApplication::applicationName(), const QString& topic = QStringLiteral("System"), QObject* parent=nullptr) :
-          QObject(parent),
-          schema(schema),
-          application(application),
-          topic(topic),
-          ddeFilter(application, topic, this)
-        {
-            connect(&ddeFilter, &QDdeFilter::command, this, &QUrlProtocolHandler::onCommand);
-            QCoreApplication::instance()->installNativeEventFilter(&ddeFilter);
-        }
+        public:
+            //警告提示warning: ‘xxx’ will be initialized after 'xxx'
+            //其实是由于我们在初始化成员变量的时候没有按照成员声明的顺序初始化造成的，
+            //所以以后在使用Qt进行开发应用程序时，应该按照头文件中成员变量声明的顺序
+            //进行初始化就不会出现上述的警告了  无视该警告 程序仍然可以正常编译
 
-        ~QUrlProtocolHandler()
-        {
-            QCoreApplication::instance()->removeNativeEventFilter(&ddeFilter);
-        }
-
-        void install(const QString& applicationPath = QCoreApplication::instance()->arguments().at(0))
-        {
-            if (!schema.isEmpty())
+            //
+            QUrlProtocolHandler(const QString& schema, const QString& application = QCoreApplication::applicationName(), const QString& topic = QStringLiteral("System"), QObject* parent=nullptr) :
+              QObject(parent),
+              schema(schema),
+              application(application),
+              topic(topic),
+              ddeFilter(application, topic, this)
             {
-                QSettings registry(QString("HKEY_CURRENT_USER\\SOFTWARE\\Classes\\%1").arg(schema), QSettings::NativeFormat);
-                registry.setValue("URL Protocol", "");
-                registry.setValue("shell/open/command/.", applicationPath);
-                registry.setValue("shell/open/ddeexec/.", "%1");
-                registry.setValue("shell/open/ddeexec/application/.", application);
-                registry.setValue("shell/open/ddeexec/topic/.", topic);
-                registry.sync();
+                connect(&ddeFilter, &QDdeFilter::command, this, &QUrlProtocolHandler::onCommand);
+                QCoreApplication::instance()->installNativeEventFilter(&ddeFilter);
             }
-        }
 
-        void uninstall()
-        {
-            // Prevent catastrophic removal of all Classes subkey
-            if (!schema.isEmpty())
+            ~QUrlProtocolHandler()
             {
-                QSettings registry(QString("HKEY_CURRENT_USER\\SOFTWARE\\Classes"), QSettings::NativeFormat);
-                registry.remove(schema);
+                QCoreApplication::instance()->removeNativeEventFilter(&ddeFilter);
             }
-        }
+            //将程序运行参数列表中的第一个(包含完整路径的程序名称) 作为参数传入 将以下几种值写入注册表中  uninstall()时会自动删除掉
+            void install(const QString& applicationPath = QCoreApplication::instance()->arguments().at(0))
+            {
+                if (!schema.isEmpty())
+                {
+                    //QSettings实例化一个registry对象 选择合适的储存格式保存信息  在Windows上，这意味着系统注册表。
+                    //在macOS和iOS上，这意味着CFPreferences API； 在Unix上，这意味着INI格式的文本配置文件。
+                    //将schema格式化输出到Class注册表键的下面建立一个dde4qt目录
+                    QSettings registry(QString("HKEY_CURRENT_USER\\SOFTWARE\\Classes\\%1").arg(schema), QSettings::NativeFormat);
+                    registry.setValue("URL Protocol", "");                          //在上级目录下建立URL Protocol键  值为空
+                    registry.setValue("shell/open/command/.", applicationPath);     //将作为参数传入的applicationPath作为值写入上级目录下的shell/open/command/. (默认值)
+                    registry.setValue("shell/open/ddeexec/.", "%1");                //上级目录下写入shell/open/ddeexec/. 值为%1
+                    registry.setValue("shell/open/ddeexec/application/.", application);  //写入程序名
+                    registry.setValue("shell/open/ddeexec/topic/.", topic);         //写入主题
+                    registry.sync();   //保存到注册表
+                }
+            }
+            //删除注册表中留下的信息
+            void uninstall()
+            {
+                // Prevent catastrophic removal of all Classes subkey
+                if (!schema.isEmpty())
+                {
+                    QSettings registry(QString("HKEY_CURRENT_USER\\SOFTWARE\\Classes"), QSettings::NativeFormat);  //定位到注册表Classes项
+                    registry.remove(schema);   //删除注册表项schema  值为dde4qt
+                }
+            }
 
-    private Q_SLOTS:
-        void onCommand(const QString& command)
-        {
-            emit activate(QUrl(command));
-        }
+        private Q_SLOTS:  //槽函数
+            void onCommand(const QString& command)
+            {
+                emit activate(QUrl(command));
+            }
 
-    private:
-        const QString schema;
-        const QString application;
-        const QString topic;
-        QDdeFilter ddeFilter;
+        private:
+            const QString schema;
+            const QString application;
+            const QString topic;
+            QDdeFilter ddeFilter;
     };
 } // win32
